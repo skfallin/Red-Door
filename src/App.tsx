@@ -105,6 +105,95 @@ function ScrollScrubVideo() {
       return undefined;
     }
 
+    const isTouchDevice = window.matchMedia('(hover: none), (pointer: coarse)').matches;
+
+    if (isTouchDevice) {
+      let duration = 0;
+      let targetTime = 0;
+      let requestRef = 0;
+      let seekQueued = false;
+
+      const getScrollTargetTime = () => {
+        const scrollRange = document.documentElement.scrollHeight - window.innerHeight;
+        const scrollY = Math.min(Math.max(window.scrollY, 0), Math.max(scrollRange, 0));
+        const scrollFraction = scrollRange > 0 ? scrollY / scrollRange : 0;
+
+        return scrollFraction * duration;
+      };
+
+      const applyTargetTime = () => {
+        requestRef = 0;
+
+        if (!duration || video.readyState < HTMLMediaElement.HAVE_METADATA || video.seeking) {
+          seekQueued = true;
+          return;
+        }
+
+        const safeTargetTime = Math.min(Math.max(targetTime, 0), Math.max(duration - 0.01, 0));
+
+        if (Math.abs(video.currentTime - safeTargetTime) > 0.08) {
+          video.currentTime = safeTargetTime;
+        }
+      };
+
+      const scheduleSeek = () => {
+        if (requestRef) {
+          return;
+        }
+
+        requestRef = requestAnimationFrame(applyTargetTime);
+      };
+
+      const updateTargetFromScroll = () => {
+        targetTime = getScrollTargetTime();
+        scheduleSeek();
+      };
+
+      const handleMetadata = () => {
+        duration = video.duration || 0;
+        video.pause();
+        targetTime = getScrollTargetTime();
+
+        if (duration && video.currentTime === 0) {
+          video.currentTime = 0.01;
+        }
+
+        scheduleSeek();
+      };
+
+      const handleSeeked = () => {
+        if (!seekQueued) {
+          return;
+        }
+
+        seekQueued = false;
+        scheduleSeek();
+      };
+
+      video.addEventListener('loadedmetadata', handleMetadata);
+      video.addEventListener('loadeddata', updateTargetFromScroll);
+      video.addEventListener('seeked', handleSeeked);
+      window.addEventListener('scroll', updateTargetFromScroll, { passive: true });
+      window.addEventListener('resize', updateTargetFromScroll);
+      window.addEventListener('orientationchange', updateTargetFromScroll);
+      video.pause();
+      handleMetadata();
+      updateTargetFromScroll();
+
+      return () => {
+        if (requestRef) {
+          cancelAnimationFrame(requestRef);
+        }
+
+        video.removeEventListener('loadedmetadata', handleMetadata);
+        video.removeEventListener('loadeddata', updateTargetFromScroll);
+        video.removeEventListener('seeked', handleSeeked);
+        window.removeEventListener('scroll', updateTargetFromScroll);
+        window.removeEventListener('resize', updateTargetFromScroll);
+        window.removeEventListener('orientationchange', updateTargetFromScroll);
+      };
+    }
+
     let duration = 0;
     let targetTime = 0;
     let requestRef = 0;
